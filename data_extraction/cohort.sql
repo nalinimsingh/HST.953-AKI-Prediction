@@ -1,7 +1,7 @@
-/* Hospital admissions and demographics with patient over 18 */
+/* Patients over 18 with icustay lengths over 3 days */
 
-DROP MATERIALIZED view if exists eighteenplus;
-CREATE materialized view eighteenplus as(
+DROP MATERIALIZED view if exists age18survive3;
+CREATE materialized view age18survive3 as(
 WITH tmp as(
 SELECT a.subject_id, p.gender, a.ethnicity, 
 	EXTRACT(EPOCH FROM(a.admittime-p.dob))/(365.25*24*3600) as age,
@@ -11,12 +11,18 @@ SELECT a.subject_id, p.gender, a.ethnicity,
 	a.diagnosis, p.dod, p.dod_hosp, a.has_chartevents_data
 FROM admissions a
 INNER JOIN patients p
-ON a.subject_id = p.subject_id
+      ON a.subject_id = p.subject_id -- 50765 hospital admissions 
 )
-SELECT * FROM tmp
-WHERE age>=18
-ORDER BY subject_id, admittime
-); -- 50765
+SELECT t.*, i.icustay_id, i.dbsource, i.intime, i.outtime, i.los
+FROM tmp t
+INNER JOIN icustays i
+ON t.hadm_id = i.hadm_id
+   WHERE age>=18
+   AND los>=3
+ORDER BY subject_id, admittime, intime
+); /* 19534 icustays. Does not include readmissions in same hadm_id combining to make longer icustay. select count(distinct(icustay_id)) from age18survive3; matches*/
+
+
 
 
 /* Sepsis. Taken from https://github.com/MIT-LCP/mimic-code/blob/master/sepsis/angus.sql */
@@ -102,3 +108,50 @@ SELECT subject_id, hadm_id, infection,
 FROM aggregate;
 
 
+
+
+
+
+/* All urine events from outputevents. Adapted from https://github.com/MIT-LCP/mimic-code/blob/master/etc/firstday/urine-output-first-day.sql */
+
+drop materialized view if exists urineevents;
+create materialized view urineevents as(
+select hadm_id, icustay_id, charttime, value, valueuom
+from outputevents
+where itemid in
+(
+-- these are the most frequently occurring urine output observations in CareVue
+40055, -- "Urine Out Foley"
+43175, -- "Urine ."
+40069, -- "Urine Out Void"
+40094, -- "Urine Out Condom Cath"
+40715, -- "Urine Out Suprapubic"
+40473, -- "Urine Out IleoConduit"
+40085, -- "Urine Out Incontinent"
+40057, -- "Urine Out Rt Nephrostomy"
+40056, -- "Urine Out Lt Nephrostomy"
+40405, -- "Urine Out Other"
+40428, -- "Urine Out Straight Cath"
+40086,--	Urine Out Incontinent
+40096, -- "Urine Out Ureteral Stent #1"
+40651, -- "Urine Out Ureteral Stent #2"
+
+-- these are the most frequently occurring urine output observations in CareVue
+226559, -- "Foley"
+226560, -- "Void"
+227510, -- "TF Residual"
+226561, -- "Condom Cath"
+226584, -- "Ileoconduit"
+226563, -- "Suprapubic"
+226564, -- "R Nephrostomy"
+226565, -- "L Nephrostomy"
+226567, --	Straight Cath
+226557, -- "R Ureteral Stent"
+226558  -- "L Ureteral Stent"
+)
+order by hadm_id, icustay_id
+); -- 3420280     3.5M
+
+-- mimic=# select count(*) from urineevents where lower(valueuom) like '%ml%'; -- 3412546
+-- select count(*) from urineevents where valueuom is null; -- 7734. Sum of the 2 match. 
+-- select max(*) from urineevents; -- 4555555. Need to get rid of outliers. 

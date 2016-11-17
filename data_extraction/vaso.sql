@@ -15,7 +15,7 @@ CREATE MATERIALIZED VIEW vaso AS
 WITH io_cv AS
 (
   select
-    icustay_id, charttime, itemid, stopped, rate, amount
+    icustay_id, EXTRACT(epoch FROM charttime) as charttime, itemid, stopped, rate, amount
   from inputevents_cv
   where itemid in
   (

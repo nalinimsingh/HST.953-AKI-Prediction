@@ -14,10 +14,14 @@ CREATE MATERIALIZED VIEW vaso AS
 
 WITH io_cv AS
 (
-  select
-    icustay_id, EXTRACT(epoch FROM charttime) as charttime, itemid, stopped, rate, amount
-  from inputevents_cv
-  where itemid in
+  SELECT
+    ie.icustay_id, EXTRACT(epoch FROM icu.outtime) - EXTRACT(epoch FROM icu.intime) AS icu_los_c,
+    EXTRACT(epoch FROM ie.charttime) AS charttime, ie.itemid, ie.stopped, ie.rate, ie.amount
+  FROM inputevents_cv ie
+  LEFT JOIN icustays icu
+    ON ie.icustay_id = icu.icustay_id
+    
+  WHERE itemid in
   (
     30047,30120 -- norepinephrine
     ,30044,30119,30309 -- epinephrine
@@ -26,17 +30,20 @@ WITH io_cv AS
     ,30043,30307,30125 -- dopamine
     ,30046 -- isuprel
   )
-  and rate is not null
-  and rate > 0
+  AND rate IS NOT NULL
+  AND rate > 0
 )
 -- select only the ITEMIDs from the inputevents_mv table related to vasopressors
-, io_mv as
+, io_mv AS
 (
-  select
-    icustay_id, linkorderid, EXTRACT(epoch FROM starttime) as starttime, EXTRACT(epoch FROM endtime) AS endtime
-  from inputevents_mv io
+  SELECT DISTINCT
+    io.icustay_id,
+    (SUM(EXTRACT(epoch FROM endtime)-EXTRACT(epoch FROM starttime)) OVER (PARTITION BY io.icustay_id)) /(EXTRACT(epoch FROM outtime) - EXTRACT(epoch FROM intime)) AS vaso_frac
+  FROM inputevents_mv io
+  LEFT JOIN icustays icu
+    ON io.icustay_id = icu.icustay_id
   -- Subselect the vasopressor ITEMIDs
-  where itemid in
+  WHERE itemid IN
   (
   221906 -- norepinephrine
   ,221289 -- epinephrine
@@ -45,20 +52,20 @@ WITH io_cv AS
   ,221662 -- dopamine
   ,227692 -- isuprel
   )
-  and rate is not null
-  and rate > 0
-  and statusdescription != 'Rewritten' -- only valid orders
+  AND rate IS NOT NULL
+  AND rate > 0
+  AND statusdescription != 'Rewritten' -- only valid orders
 )
 SELECT
   co.subject_id, co.hadm_id, co.icustay_id
-  , io_cv.charttime, io_cv.itemid, io_cv.stopped
-  , io_mv.linkorderid, io_mv.starttime, io_mv.endtime
+  , io_cv.icu_los_c, io_cv.charttime, io_cv.itemid, io_cv.stopped
+  , io_mv.vaso_frac
 FROM aline_cohort co
 LEFT JOIN io_mv
   ON co.icustay_id = io_mv.icustay_id
 LEFT JOIN io_cv
   ON co.icustay_id = io_cv.icustay_id
 GROUP BY co.subject_id, co.hadm_id, co.icustay_id
-	, io_cv.charttime, io_cv.itemid, io_cv.stopped
-	, io_mv.linkorderid, io_mv.starttime, io_mv.endtime 
+	, io_cv.icu_los_c, io_cv.charttime, io_cv.itemid, io_cv.stopped
+	, io_mv.vaso_frac
 ORDER BY co.icustay_id;

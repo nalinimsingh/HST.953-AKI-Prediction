@@ -33,7 +33,7 @@ WITH io_cv AS
 , io_mv as
 (
   select
-    icustay_id, linkorderid, starttime, endtime
+    icustay_id, linkorderid, EXTRACT(epoch FROM starttime) as starttime, EXTRACT(epoch FROM endtime) AS endtime
   from inputevents_mv io
   -- Subselect the vasopressor ITEMIDs
   where itemid in

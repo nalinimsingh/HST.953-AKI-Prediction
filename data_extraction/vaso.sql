@@ -291,22 +291,45 @@ WHERE NOT EXISTS(SELECT * FROM vasomv s2
                  AND s1.starttime <= s2.endtime)
 GROUP BY s1.icustay_id, s1.starttime
 ORDER BY s1.icustay_id, s1.starttime
+),
+vaso_times as
+(
+  select
+    icustay_id
+    -- generate a sequential integer for convenience
+    , ROW_NUMBER() over (partition by icustay_id order by starttime) as vasonum
+    , starttime, endtime
+  from
+    vasocv_grp
+
+  UNION
+
+  select
+    icustay_id
+    , ROW_NUMBER() over (partition by icustay_id order by starttime) as vasonum
+    , starttime, endtime
+  from
+    vasomv_grp
+
+  order by icustay_id, vasonum
 )
-select
-  icustay_id
-  -- generate a sequential integer for convenience
-  , ROW_NUMBER() over (partition by icustay_id order by starttime) as vasonum
-  , starttime, endtime
-from
-  vasocv_grp
+SELECT icustay_id, sum(duration) AS total_duration_without_redundancy
+FROM  (
+   SELECT icustay_id,island, max(endtime) - min(starttime) AS duration
+   FROM  (
+      SELECT icustay_id,starttime, endtime
+           , count(gap) OVER (ORDER BY rn) AS island
+      FROM  (
+         SELECT icustay_id,starttime, endtime
+              , (starttime > max(endtime) OVER w) OR NULL AS gap
+              , row_number() OVER w AS rn
+         FROM   vaso_times
 
-UNION
-
-select
-  icustay_id
-  , ROW_NUMBER() over (partition by icustay_id order by starttime) as vasonum
-  , starttime, endtime
-from
-  vasomv_grp
-
-order by icustay_id, vasonum;
+         WINDOW w AS ( PARTITION BY icustay_id ORDER BY starttime, endtime DESC  -- longest range 1st
+                      ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)
+         ) sub1
+      ) sub2
+   GROUP BY icustay_id, island
+   ) sub3
+GROUP BY icustay_id
+ORDER BY icustay_id

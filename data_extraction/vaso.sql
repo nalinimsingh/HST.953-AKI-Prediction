@@ -13,8 +13,9 @@ Thanks to Alistair Johnson
 -- milrinone - 30125,221986
 
 -- select only the ITEMIDs from the inputevents_cv table related to vasopressors
---DROP MATERIALIZED VIEW IF EXISTS VASOPRESSORDURATIONS;
---CREATE MATERIALIZED VIEW VASOPRESSORDURATIONS as
+
+DROP MATERIALIZED VIEW IF EXISTS VASOPRESSORDURATIONS;
+CREATE MATERIALIZED VIEW VASOPRESSORDURATIONS as
 with io_cv as
 (
   select
@@ -313,7 +314,8 @@ vaso_times as
 
   order by icustay_id, vasonum
 )
-SELECT icustay_id, sum(duration) AS total_duration_without_redundancy
+
+SELECT icustay_id, sum(duration) AS vaso_duration
 FROM  (
    SELECT icustay_id,island, max(endtime) - min(starttime) AS duration
    FROM  (

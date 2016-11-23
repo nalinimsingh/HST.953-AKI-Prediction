@@ -313,25 +313,39 @@ vaso_times as
     vasomv_grp
 
   order by icustay_id, vasonum
-)
+),
+vaso_durations as
+(
+  SELECT icustay_id, sum(duration) AS duration
+  FROM  (
+     SELECT icustay_id,island, max(endtime) - min(starttime) AS duration
+     FROM  (
+        SELECT icustay_id,starttime, endtime
+             , count(gap) OVER (ORDER BY rn) AS island
+        FROM  (
+           SELECT icustay_id,starttime, endtime
+                , (starttime > max(endtime) OVER w) OR NULL AS gap
+                , row_number() OVER w AS rn
+           FROM   vaso_times
 
-SELECT icustay_id, sum(duration) AS vaso_duration
-FROM  (
-   SELECT icustay_id,island, max(endtime) - min(starttime) AS duration
-   FROM  (
-      SELECT icustay_id,starttime, endtime
-           , count(gap) OVER (ORDER BY rn) AS island
-      FROM  (
-         SELECT icustay_id,starttime, endtime
-              , (starttime > max(endtime) OVER w) OR NULL AS gap
-              , row_number() OVER w AS rn
-         FROM   vaso_times
-
-         WINDOW w AS ( PARTITION BY icustay_id ORDER BY starttime, endtime DESC  -- longest range 1st
-                      ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)
-         ) sub1
-      ) sub2
-   GROUP BY icustay_id, island
-   ) sub3
-GROUP BY icustay_id
-ORDER BY icustay_id
+           WINDOW w AS ( PARTITION BY icustay_id ORDER BY starttime, endtime DESC
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)
+           ) sub1
+        ) sub2
+     GROUP BY icustay_id, island
+     ) sub3
+  GROUP BY icustay_id
+  ORDER BY icustay_id
+),
+icu_vaso as
+(
+  SELECT subject_id, icu.icustay_id, outtime-intime as icu_duration
+  , COALESCE(duration,INTERVAL '0 seconds') AS vaso_duration
+  FROM icustays icu
+  LEFT JOIN vaso_durations vd
+    ON icu.icustay_id = vd.icustay_id
+) 
+SELECT
+  subject_id, icustay_id, icu_duration,
+  vaso_duration, EXTRACT(EPOCH FROM vaso_duration)/EXTRACT(EPOCH FROM icu_duration) AS vaso_frac
+FROM icu_vaso

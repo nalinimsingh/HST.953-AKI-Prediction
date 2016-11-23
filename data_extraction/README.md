@@ -4,7 +4,7 @@
 
 1. Above age 18.
 2. Developed sepsis as defined by the Angus criteria during their stay in the ICU.
-3. Were not admitted to the ICU with end-stage renal disease. RIFLE criteria. 
+3. Were not admitted to the ICU with chronic kidney disease. Filter with creatinine>1.2 upon admission or ICD9 code for chronic kidney disease. 
 4. Survive an ICU stay lasting at least 3 days.
 
 ## Features/Covariates to Extract
@@ -19,7 +19,7 @@
 - Urine output
 - Lactate
 - Blood urea nitrogen
-- Creatinine
+- Serum Creatinine
 
 
 ## Extraction Details/Considerations

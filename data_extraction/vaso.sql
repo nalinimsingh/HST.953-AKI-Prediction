@@ -9,8 +9,6 @@ Thanks to Alistair Johnson
 -- phenylephrine - 30127,30128,221749
 -- vasopressin - 30051,222315 (42273, 42802 also for 2 patients)
 -- dopamine - 30043,30307,221662
--- dobutamine - 30042,30306,221653
--- milrinone - 30125,221986
 
 -- select only the ITEMIDs from the inputevents_cv table related to vasopressors
 
@@ -35,8 +33,7 @@ with io_cv as
   where itemid in
   (
     30047,30120,30044,30119,30309,30127
-  , 30128,30051,30043,30307,30042,30306,30125
-  , 42273, 42802
+  , 30128,30051,30043,30307,42273,42802
   )
 )
 -- select only the ITEMIDs from the inputevents_mv table related to vasopressors
@@ -48,7 +45,7 @@ with io_cv as
   -- Subselect the vasopressor ITEMIDs
   where itemid in
   (
-  221906,221289,221749,222315,221662,221653,221986
+  221906,221289,221749,222315,221662
   )
   and statusdescription != 'Rewritten' -- only valid orders
 )

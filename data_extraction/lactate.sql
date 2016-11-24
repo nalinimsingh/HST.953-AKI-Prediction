@@ -36,20 +36,20 @@ SELECT subject_id, hadm_id, icustay_id, MAX(valuenum) AS max_val
 FROM 
 (
 	SELECT
-	  co.subject_id, co.hadm_id, co.icustay_id
+	  ic.subject_id, ic.hadm_id, ic.icustay_id
 	  , ce_l.intime AS intime, ce_l.charttime AS charttime, ce_l.itemid AS itemid, ce_l.valuenum AS valuenum
-	FROM aline_cohort co
+	FROM icustays ic
 	INNER JOIN ce_l
-	  ON co.icustay_id = ce_l.icustay_id
+	  ON ic.icustay_id = ce_l.icustay_id
 
 	UNION ALL
 
 	SELECT
-	  co.subject_id, co.hadm_id, co.icustay_id
+	  ic.subject_id, ic.hadm_id, ic.icustay_id
 	  , le_l.intime AS intime, le_l.charttime AS charttime, le_l.itemid AS itemid, le_l.valuenum AS valuenum
-	FROM aline_cohort co
+	FROM icustays ic
 	LEFT JOIN le_l
-	  ON co.icustay_id = le_l.icustay_id
+	  ON ic.icustay_id = le_l.icustay_id
 ) AS all_l
 WHERE charttime < EXTRACT(epoch FROM intime) + 72*60*60
 GROUP BY subject_id, hadm_id, icustay_id

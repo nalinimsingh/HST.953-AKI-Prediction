@@ -1,4 +1,4 @@
-
+﻿
 
 /* All urine events from outputevents. Adapted from https://github.com/MIT-LCP/mimic-code/blob/master/etc/firstday/urine-output-first-day.sql */
 
@@ -27,7 +27,6 @@ where itemid in
 -- these are the most frequently occurring urine output observations in CareVue
 226559, -- "Foley"
 226560, -- "Void"
-227510, -- "TF Residual"
 226561, -- "Condom Cath"
 226584, -- "Ileoconduit"
 226563, -- "Suprapubic"

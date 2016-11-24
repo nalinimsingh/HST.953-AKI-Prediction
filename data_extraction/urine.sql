@@ -4,7 +4,7 @@
 
 drop materialized view if exists urine;
 create materialized view urine as(
-select hadm_id, icustay_id, charttime, value, valueuom
+select hadm_id, icustay_id, charttime, value
 from outputevents
 where itemid in
 (
@@ -37,8 +37,23 @@ where itemid in
 226558  -- "L Ureteral Stent"
 )
 order by hadm_id, icustay_id
-); -- 3420280     3.5M
+); -- 3394431     3.4 million
 
--- mimic=# select count(*) from urine where lower(valueuom) like '%ml%'; -- 3412546
--- select count(*) from urine where valueuom is null; -- 7734. Sum of the 2 match. 
--- select max(*) from urine; -- 4555555. Need to get rid of outliers. 
+
+
+
+
+/* Viewing missing fields */
+-- select count(*) from urine; --3394431
+-- select count(hadm_id) from urine; -- 3390489
+-- select count(icustay_id) from urine; -- 3388639
+-- select count(charttime) from urine; -- 3394431
+
+
+/* Unit check when above extracted valueuom also */
+-- select count(*) from urine where lower(valueuom) like '%ml%'; -- 3386697
+-- select count(*) from urine where valueuom is null; -- 7734. Sum of the 2 match total 3394431
+-- select max(value) from urine; -- 4555555. Need to get rid of outliers. 
+
+
+

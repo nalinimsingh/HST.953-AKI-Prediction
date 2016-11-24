@@ -24,6 +24,9 @@ ORDER BY subject_id, admittime, intime
 
 
 
+-- select count(icustay_id) from age18survive3 ;  -- 19534
+-- select count(distinct(icustay_id)) from age18survive3 ;  --19534
+
 
 
 

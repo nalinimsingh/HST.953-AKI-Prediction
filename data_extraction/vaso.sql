@@ -313,26 +313,9 @@ vaso_times as
 ),
 vaso_durations as
 (
-  SELECT icustay_id, sum(duration) AS duration
-  FROM  (
-     SELECT icustay_id,island, max(endtime) - min(starttime) AS duration
-     FROM  (
-        SELECT icustay_id,starttime, endtime
-             , count(gap) OVER (ORDER BY rn) AS island
-        FROM  (
-           SELECT icustay_id,starttime, endtime
-                , (starttime > max(endtime) OVER w) OR NULL AS gap
-                , row_number() OVER w AS rn
-           FROM   vaso_times
-
-           WINDOW w AS ( PARTITION BY icustay_id ORDER BY starttime, endtime DESC
-                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)
-           ) sub1
-        ) sub2
-     GROUP BY icustay_id, island
-     ) sub3
+  SELECT icustay_id,sum(endtime-starttime) as duration
+  FROM vaso_times
   GROUP BY icustay_id
-  ORDER BY icustay_id
 ),
 icu_vaso as
 (

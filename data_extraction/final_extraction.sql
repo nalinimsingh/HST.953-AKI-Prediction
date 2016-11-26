@@ -35,29 +35,69 @@ from cohort0
 where subject_id not in(
 select subject_id
 from ckd)
-); -- 7681
+); -- 7681 rows/icustays. 7135 distinct hadm, 6463 distinct subject 
 
 
 ----------- Tables used to save computation time -----------------
+-- Compute windows hospital or icu stay limits based on either +/- N hours or the midpoint of the current and the neighboring window if the time difference is less than 2*N hours.  
 
--- Table of admission times used to fill in missing values
-drop materialized view if exists cohortadmissions1;
+-- Table of fuzzy admission times used to fill in missing values
+drop materialized view if exists cohortadmissions1 cascade;
 create materialized view cohortadmissions1 as(
-select c.subject_id, c.hadm_id, a.admittime, a.dischtime
-from cohort1 c
-inner join admissions a
-on c.hadm_id = a.hadm_id
-); -- 7681
+with tmp as(
+     select subject_id, hadm_id, admittime, dischtime,
+     lag (dischtime) over (partition by subject_id order by admittime) as dischtime_lag,
+     lead (admittime) over (partition by subject_id order by admittime) as admittime_lead
+     from admissions
+     where hadm_id in (
+     	   select distinct(hadm_id) from cohort1
+     )
+)
+select subject_id, hadm_id,
+       case
+	when dischtime_lag is not null
+       	and dischtime_lag > (admittime - interval '24' hour)
+      	then admittime - ( (admittime - dischtime_lag) / 2 )
+	else admittime - interval '12' hour
+	end as admittime,
+	case
+	when admittime_lead is not null
+	and admittime_lead < (dischtime + interval '24' hour)
+	then dischtime + ( (admittime_lead - dischtime) / 2 )
+	else (dischtime + interval '12' hour)
+	end as dischtime
+from tmp
+); -- 7135
 
--- Table of icustay times used to fill in missing values
-drop materialized view if exists cohorticustays1;
+-- Table of fuzzy icustay times used to fill in missing values
+drop materialized view if exists cohorticustays1 cascade;
 create materialized view cohorticustays1 as(
-select c.subject_id, c.icustay_id, i.intime, i.outtime
-from cohort1 c
-inner join icustays i
-on c.icustay_id = i.icustay_id
+with tmp as(
+     select subject_id, icustay_id, intime, outtime,
+     lag (outtime) over (partition by subject_id order by intime) as outtime_lag,
+     lead (intime) over (partition by subject_id order by intime) as intime_lead
+     from icustays
+     where icustay_id in (
+     	   select distinct(icustay_id) from cohort1
+     )
+)
+select subject_id, icustay_id,
+       case
+	when outtime_lag is not null
+       	and outtime_lag > (intime - interval '24' hour)
+      	then intime - ( (intime - outtime_lag) / 2 )
+	else intime - interval '12' hour
+	end as intime,
+	case
+	when intime_lead is not null
+	and intime_lead < (outtime + interval '24' hour)
+	then outtime + ( (intime_lead - outtime) / 2 )
+	else (outtime + interval '12' hour)
+	end as outtime
+from tmp
 ); -- 7681
 ------------------------------------------------------------------
+
 
 
 -- Keep only relevant cohort's creatinine and fill in missing hadm
@@ -88,16 +128,18 @@ union
 select * from tmp2
 order by subject_id, hadm_id, charttime
 ); -- 246075 
+-- There are actually a bunch of creatinine measurements which lie out of any hadm_ids by several days. 
 
 
--- Sanity check
+
+
+-- Sanity check for above ^^
 select count(*) from(
 select * from creatinine cr
 inner join cohortadmissions1 c1
 on cr.subject_id = c1.subject_id
 ) as tmp;
--- 362550 using cohort1 and cohortadmissions1
-
+-- 362550 using cohortadmissions1. Why is this not matching above???
 
 
 
@@ -108,13 +150,27 @@ on cr.subject_id = c1.subject_id
 
 
 
+-- Remove patients who have 'admission creatinines' above 1.2. Final cohort. 
 
 
 
 
 
 
--- Filling in missing hadm/icustay for urine
+
+-- Keep only relevant cohort's urine and fill in missing hadm+icustay
+
+
+-- Keep only relevant cohort's map and fill in missing icustay
+
+
+-- Keep only relevant cohort's lactate and fill in missing hadm+icustay
+
+
+
+
+
+
 
 
 -- Joining and Processing Views
@@ -135,34 +191,3 @@ LEFT JOIN map m
 --drop materialized view cohort1;
 
 
-
-
-
-
--- Testing
-
-create materialized view test1 as(
-select subject_id, hadm_id
-from admissions
-where subject_id<30
-order by subject_id
-);
-
-
-create materialized view test2 as(
-select subject_id, hadm_id
-from admissions
-where subject_id<60
-and subject_id>30
-order by subject_id
-);
-
-drop materialized view if exists test1;
-drop materialized view if exists test2;
-
-select *
-from test1
-union
-select *
-from test2
-order by subject_id;

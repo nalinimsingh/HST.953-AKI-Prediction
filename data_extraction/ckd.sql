@@ -1,4 +1,4 @@
--- Chronic kidney disease
+-- Finds all patients with chronic kidney disease. Only subject id.
 
 drop materialized view if exists ckd;
 create materialized view ckd as(

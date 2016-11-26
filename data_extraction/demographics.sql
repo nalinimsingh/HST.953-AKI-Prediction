@@ -1,7 +1,7 @@
-/* Patients over 18 with icustay lengths over 3 days */
+/* Demographics of patients over 18 with icustay lengths over 3 days */
 
-DROP MATERIALIZED view if exists age18survive3;
-CREATE materialized view age18survive3 as(
+DROP MATERIALIZED view if exists demographics;
+CREATE materialized view demographics as(
 WITH tmp as(
 SELECT a.subject_id, p.gender, a.ethnicity, 
 	EXTRACT(EPOCH FROM(a.admittime-p.dob))/(365.25*24*3600) as age,
@@ -20,12 +20,12 @@ ON t.hadm_id = i.hadm_id
    WHERE age>=18
    AND los>=3
 ORDER BY subject_id, admittime, intime
-); /* 19534 icustays. Does not include readmissions in same hadm_id combining to make longer icustay. select count(distinct(icustay_id)) from age18survive3; matches*/
+); /* 19534 icustays. Does not include readmissions in same hadm_id combining to make longer icustay.*/
 
 
 
--- select count(icustay_id) from age18survive3 ;  -- 19534
--- select count(distinct(icustay_id)) from age18survive3 ;  --19534
+-- select count(icustay_id) from demographics;  -- 19534
+-- select count(distinct(icustay_id)) from demographics ;  --19534
 
 
 

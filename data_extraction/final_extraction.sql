@@ -138,26 +138,10 @@ order by subject_id, hadm_id, charttime
 -- Note that there are actually a bunch of creatinine measurements which lie out of any hadm_ids by several days. We will toss out creatinine measurements that lie too far out of the hadm window.  
 
 
-/*
-select count(distinct(subject_id)) from cohort1; -- 6463
-select count(distinct(subject_id)) from tmp; -- 
-select count(distinct(subject_id)) from tmp0; --
-select count(distinct(subject_id)) from tmp1; --
-select count(distinct(subject_id)) from tmp2; -- 
-select count(distinct(subject_id)) from creatinine1; -- 6443
-
-select count(distinct(hadm_id)) from cohort1; -- 7135
-select count(distinct(hadm_id)) from tmp; -- 7103.  
-select count(distinct(hadm_id)) from tmp0;
-select count(distinct(hadm_id)) from tmp1;
-select count(distinct(hadm_id)) from tmp2;
-select count(distinct(hadm_id)) from creatinine1; -- 7103
-*/
-
 
 -- Get creatinine measurements closest to each icustay entry time. 'admission creatinines'
 -- Careful not to use fuzzy admit times, but real ones. 
-drop materialized view if exists admission_creatinine; 
+drop materialized view if exists admission_creatinine cascade; 
 create materialized view admission_creatinine as(
 with tmp as(
 select c.*, extract(epoch from (c.charttime-a.admittime))/36 as min_from_admission
@@ -177,7 +161,10 @@ group by hadm_id
 );  -- 5624 hadm_ids.
 
 
--- Create final cohort. Remove patients who have 'admission creatinines' >=1.2. 
+
+
+----------------------  Create final cohort.  ----------------------------------------------
+--  Remove patients who have 'admission creatinines' >=1.2. 
 -- Note, there are a lot of patients without 'admission creatinine' values. They will still be included. 
 drop materialized view if exists cohort_final cascade;
 create materialized view cohort_final as(
@@ -190,17 +177,50 @@ where maxvalue>1.2)
 ); -- 5471 icustay. 5065 hadm, 4665 subject
 
 
--- Keep only relevant cohort's creatinine
+-- Update the subset of admission and icustay fuzzy windows
+
+drop materialized view if exists cohortadmissions_final cascade;
+create materialized view cohortadmissions_final as(
+select *
+from cohortadmissions1
+where hadm_id in (
+      select hadm_id
+      from cohort_final)
+); -- 5065
+
+
+drop materialized view if exists cohorticustays_final cascade;
+create materialized view cohorticustays_final as(
+select *
+from cohorticustays1
+where icustay_id in (
+      select icustay_id
+      from cohort_final)
+); -- 5471
+------------------------------------------------------------------------------------------
+
+
+
+-- Keep only relevant cohort's creatinine. All rows have hadm_id. 
 drop materialized view if exists creatinine_final cascade;
 create materialized view creatinine_final as(
+with tmp as(
 select *
 from creatinine1
 where hadm_id in(
 select hadm_id
 from cohort_final)
-); -- 129911
+) -- 129911
+select t.*, i.icustay_id
+from tmp t
+-- left join cohorticustays_final i -- can use this instead to keep the creatinine measurements.
+inner join cohorticustays_final i
+on t.subject_id = i.subject_id
+and t.charttime between i.intime and i.outtime
+); -- 94783 using inner join. Lost over 30000 by excluding rows which could not be matched to an icustay fuzzy window.  
 
--- Keep only relevant cohort's map and fill in missing icustay
+
+-- Keep only relevant cohort's map and fill in icustay
 drop materialized view if exists map_final cascade;
 create materialized view map_final as(
 with tmp as(
@@ -209,27 +229,62 @@ from map
 where icustay_id in(
 select icustay_id
 from cohort_final)
-) -- 1823033. Removed about 2/3
+), -- 1823033. Removed about 2/3
+tmp0 as( -- Isolate rows with icustay
+   select *
+   from tmp
+   where icustay_id is not null
+), tmp1 as( -- Isolate rows without icustay  
+   select subject_id, charttime, itemid, valuenum
+   from tmp
+   where icustay_id is null
+), tmp2 as( -- try to get icustay for missing rows 
+   select t.subject_id, i.icustay_id as icustay_id, t.charttime, t.itemid, t.valuenum
+   from tmp1 t
+   inner join cohorticustays_final i
+   on t.charttime between i.intime and i.outtime
+   and t.subject_id = i.subject_id -- (with +/-12h)
+)
+select * from tmp0 -- original with icustay
+union
+select * from tmp2 -- extra icustay filled. 
+order by subject_id, icustay_id, charttime
+); -- 1823033. No maps were excluded due to missing icustay id!!!  
 
 
-
-
-);
-
-
-
-
--- Keep only relevant cohort's urine and fill in missing hadm+icustay
+-- Keep only relevant cohort's urine and fill in missing icustay
 drop materialized view if exists urine_final cascade;
 create materialized view urine_final as(
+with tmp as(
 select *
 from urine
-where hadm_id in(
-select hadm_id
+where icustay_id in(
+select icustay_id
 from cohort_final)
-); -- 1021665. Removed about 2/3. 
+), -- 1009884. Removed about 2/3
+tmp0 as( -- Isolate rows with icustay
+   select *
+   from tmp
+   where icustay_id is not null
+), tmp1 as( -- Isolate rows without icustay  
+   select subject_id, hadm_id, charttime,  value
+   from tmp
+   where icustay_id is null
+), tmp2 as( -- try to get icustay for missing rows 
+   select t.subject_id, hadm_id, i.icustay_id as icustay_id, t.charttime, t.value
+   from tmp1 t
+   inner join cohorticustays_final i
+   on t.charttime between i.intime and i.outtime
+   and t.subject_id = i.subject_id -- (with +/-12h)
+)
+select * from tmp0 -- original with icustay
+union
+select * from tmp2 -- extra icustay filled. 
+order by subject_id, icustay_id, charttime
+); -- 1008455. Excluded about 1000 measurements due to missing icustayid. 
 
--- Keep only relevant cohort's lactate and fill in missing hadm+icustay
+
+-- Keep only relevant cohort's lactate
 drop materialized view if exists lactate_final cascade;
 create materialized view lactate_final as(
 select *
@@ -237,22 +292,57 @@ from lactate
 where icustay_id in(
 select icustay_id
 from cohort_final)
-);
+); -- 4581
+
+-- Keep only relevant cohort's vasopressor durations 
+drop materialized view if exists vaso_final cascade;
+create materialized view vaso_final as(
+select *
+from vasopressordurations
+where icustay_id in(
+select icustay_id
+from cohort_final)
+); -- 5471 
+
+-- Every map, creatinine and urine from this point has an icustay_id.  
 
 
 
 
 
+-------------------- Exporting Tables --------------------------
+-- Creatinine
+COPY(
+  SELECT icustay_id, charttime, valuenum as value
+  FROM creatinine_final
+)
+TO '/home/chen/Projects/HST953-MLinCriticalCare/HST.953/data_extraction/tables/creatinine.csv' DELIMITER ',' CSV HEADER;
+
+-- Map
+COPY(
+  SELECT icustay_id, charttime, itemid, valuenum as value
+  FROM map_final
+)
+TO '/home/chen/Projects/HST953-MLinCriticalCare/HST.953/data_extraction/tables/map.csv' DELIMITER ',' CSV HEADER;
+
+-- Urine
+COPY(
+  SELECT icustay_id, charttime, value
+  FROM urine_final
+)
+TO '/home/chen/Projects/HST953-MLinCriticalCare/HST.953/data_extraction/tables/urine.csv' DELIMITER ',' CSV HEADER;
 
 
--- Joining and Processing Views
+-- Demographics, lactate, vasopressor durations. There are commas in notes so use tab separated 
+COPY(
+  SELECT c.*, l.max_val as max_lactate, v.vaso_duration, v.vaso_frac 
+  FROM cohort_final c
+  LEFT join lactate_final l
+  ON c.icustay_id = l.icustay_id
+  LEFT join vaso_final v
+  ON c.icustay_id = v.icustay_id
+)
+TO '/home/chen/Projects/HST953-MLinCriticalCare/HST.953/data_extraction/tables/cohort.tsv' DELIMITER E'\t' HEADER CSV;
 
-SELECT d.*, v.vaso_frac, l.max_val, m.itemid, m.valuenum
-FROM demographics d
-LEFT JOIN vasopressordurations v
-  ON cohort.icustay_id = v.icustay_id
-LEFT JOIN lactate l
-  ON cohort.icustay_id = l.icustay_id
-LEFT JOIN map m
-  ON cohort.icustay_id = m.icustay_id
 
+-----------------------------------------------------------------

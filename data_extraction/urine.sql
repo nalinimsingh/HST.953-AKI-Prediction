@@ -4,7 +4,7 @@
 
 drop materialized view if exists urine;
 create materialized view urine as(
-select hadm_id, icustay_id, charttime, value
+select subject_id, hadm_id, icustay_id, charttime, value
 from outputevents
 where itemid in
 (

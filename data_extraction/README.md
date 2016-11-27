@@ -1,5 +1,9 @@
 # Data Extraction
 
+## Table Sharing Location
+
+https://drive.google.com/drive/folders/0B-IsdtOumwVEZU52MDNXMzlSZUE
+
 ## Cohort Inclusion Criteria
 
 1. Above age 18.

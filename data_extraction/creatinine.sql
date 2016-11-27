@@ -6,7 +6,7 @@
 
 
  
-drop materialized view if exists creatinine;
+drop materialized view if exists creatinine cascade;
 create materialized view creatinine as(
 select subject_id, hadm_id, charttime, valuenum
 from labevents

@@ -12,7 +12,7 @@ Thanks to Alistair Johnson
 
 -- select only the ITEMIDs from the inputevents_cv table related to vasopressors
 
-DROP MATERIALIZED VIEW IF EXISTS VASOPRESSORDURATIONS;
+DROP MATERIALIZED VIEW IF EXISTS VASOPRESSORDURATIONS cascade;
 CREATE MATERIALIZED VIEW VASOPRESSORDURATIONS as
 with io_cv as
 (

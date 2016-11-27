@@ -2,7 +2,7 @@
 
 /* All urine events from outputevents. Adapted from https://github.com/MIT-LCP/mimic-code/blob/master/etc/firstday/urine-output-first-day.sql */
 
-drop materialized view if exists urine;
+drop materialized view if exists urine cascade;
 create materialized view urine as(
 select subject_id, hadm_id, icustay_id, charttime, value
 from outputevents

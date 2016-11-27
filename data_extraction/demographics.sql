@@ -1,6 +1,6 @@
 /* Demographics of patients over 18 with icustay lengths over 3 days */
 
-DROP MATERIALIZED view if exists demographics;
+DROP MATERIALIZED view if exists demographics cascade;
 CREATE materialized view demographics as(
 WITH tmp as(
 SELECT a.subject_id, p.gender, a.ethnicity, 

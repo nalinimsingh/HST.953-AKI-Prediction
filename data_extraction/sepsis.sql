@@ -1,7 +1,7 @@
 /* Sepsis. Taken from https://github.com/MIT-LCP/mimic-code/blob/master/sepsis/angus.sql */
 
 -- Appendix 1: ICD9-codes (infection)
-DROP MATERIALIZED view if exists angus_sepsis;
+DROP MATERIALIZED view if exists angus_sepsis cascade;
 CREATE MATERIALIZED VIEW angus_sepsis as
 
 WITH infection_group AS (

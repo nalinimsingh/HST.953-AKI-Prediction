@@ -1,6 +1,6 @@
 -- Finds all patients with chronic kidney disease. Only subject id.
 
-drop materialized view if exists ckd;
+drop materialized view if exists ckd cascade;
 create materialized view ckd as(
 select distinct subject_id, icd9_code
 from diagnoses_icd

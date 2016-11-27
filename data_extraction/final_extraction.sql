@@ -28,7 +28,7 @@ on d.hadm_id=s.hadm_id
 where s.angus=1); -- 10097
 
 -- Remove patients with CKD according to icd9
-drop materialized view if exists cohort1;
+drop materialized view if exists cohort1 cascade;
 create materialized view cohort1 as(
 select *
 from cohort0
@@ -100,72 +100,144 @@ from tmp
 
 
 
--- Keep only relevant cohort's creatinine and fill in missing hadm
-drop materialized view if exists creatinineC;
-create materialized view creatinineC as(
-with tmp as( -- cohort subset measurements
+-- Keep only relevant cohort's creatinine
+-- Also try to fill in missing hadm using admissions fuzzy time windows.
+-- Discard missing hadm values that lie outside fuzzy windows. 
+drop materialized view if exists creatinine1 cascade;
+create materialized view creatinine1 as(
+with tmp as( -- cohort subset measurements only, via subject and hadm id. 
      select *
      from creatinine
      where subject_id in(
-     select subject_id
-     from cohort1)
+     	   select distinct(subject_id)
+     	   from cohort1)
+     and hadm_id in(
+     	 select distinct(hadm_id)
+	 from cohort1) 
 ), tmp0 as( -- Isolate rows with hadm
    select *
    from tmp
-   where subject_id is not null
+   where hadm_id is not null
 ), tmp1 as( -- Isolate rows without hadm to do fewer calculations.  
    select subject_id, charttime, valuenum
    from tmp
-   where subject_id is null
-), tmp2 as( -- get hadm_id for missing rows 
+   where hadm_id is null
+), tmp2 as( -- try to get hadm_id for missing rows 
    select t.subject_id, a.hadm_id as hadm_id, t.charttime, t.valuenum
    from tmp1 t
    inner join cohortadmissions1 a
    on t.charttime between a.admittime and a.dischtime
+   and t.subject_id = a.subject_id -- (with +/-12h)
 )
-select * from tmp0
+select * from tmp0 -- original with hadm
 union
-select * from tmp2
+select * from tmp2 -- extra hadm filled. 
 order by subject_id, hadm_id, charttime
-); -- 246075 
--- There are actually a bunch of creatinine measurements which lie out of any hadm_ids by several days. 
+); -- 184000 using union. Use union rather than union all because the duplicate rows indicate that the same info was probably input twice. 
+
+-- Note that there are actually a bunch of creatinine measurements which lie out of any hadm_ids by several days. We will toss out creatinine measurements that lie too far out of the hadm window.  
+
+
+/*
+select count(distinct(subject_id)) from cohort1; -- 6463
+select count(distinct(subject_id)) from tmp; -- 
+select count(distinct(subject_id)) from tmp0; --
+select count(distinct(subject_id)) from tmp1; --
+select count(distinct(subject_id)) from tmp2; -- 
+select count(distinct(subject_id)) from creatinine1; -- 6443
+
+select count(distinct(hadm_id)) from cohort1; -- 7135
+select count(distinct(hadm_id)) from tmp; -- 7103.  
+select count(distinct(hadm_id)) from tmp0;
+select count(distinct(hadm_id)) from tmp1;
+select count(distinct(hadm_id)) from tmp2;
+select count(distinct(hadm_id)) from creatinine1; -- 7103
+*/
+
+
+-- Get creatinine measurements closest to each icustay entry time. 'admission creatinines'
+-- Careful not to use fuzzy admit times, but real ones. 
+drop materialized view if exists admission_creatinine; 
+create materialized view admission_creatinine as(
+with tmp as(
+select c.*, extract(epoch from (c.charttime-a.admittime))/36 as min_from_admission
+       --,row_number() over(partition by c.hadm_id order by c.charttime) as r
+from creatinine1 c
+inner join admissions a
+on c.hadm_id=a.hadm_id
+order by subject_id, hadm_id, charttime
+), tmp0 as(
+select *
+from tmp
+where min_from_admission<120 -- Get all measurements before admission and a bit after. 
+) -- select count(hadm_id) from tmp0; -- 6512.  
+select hadm_id, avg(valuenum) as meanvalue, max(valuenum) as maxvalue 
+from tmp0
+group by hadm_id
+);  -- 5624 hadm_ids.
+
+
+-- Create final cohort. Remove patients who have 'admission creatinines' >=1.2. 
+-- Note, there are a lot of patients without 'admission creatinine' values. They will still be included. 
+drop materialized view if exists cohort_final cascade;
+create materialized view cohort_final as(
+select *
+from cohort1
+where hadm_id not in(
+select hadm_id
+from admission_creatinine
+where maxvalue>1.2)
+); -- 5471 icustay. 5065 hadm, 4665 subject
+
+
+-- Keep only relevant cohort's creatinine
+drop materialized view if exists creatinine_final cascade;
+create materialized view creatinine_final as(
+select *
+from creatinine1
+where hadm_id in(
+select hadm_id
+from cohort_final)
+); -- 129911
+
+-- Keep only relevant cohort's map and fill in missing icustay
+drop materialized view if exists map_final cascade;
+create materialized view map_final as(
+with tmp as(
+select *
+from map
+where icustay_id in(
+select icustay_id
+from cohort_final)
+) -- 1823033. Removed about 2/3
 
 
 
 
--- Sanity check for above ^^
-select count(*) from(
-select * from creatinine cr
-inner join cohortadmissions1 c1
-on cr.subject_id = c1.subject_id
-) as tmp;
--- 362550 using cohortadmissions1. Why is this not matching above???
-
-
-
-
--- Get creatinine measurements closest to each icustay entry time 
-
-
-
-
-
--- Remove patients who have 'admission creatinines' above 1.2. Final cohort. 
-
-
-
+);
 
 
 
 
 -- Keep only relevant cohort's urine and fill in missing hadm+icustay
-
-
--- Keep only relevant cohort's map and fill in missing icustay
-
+drop materialized view if exists urine_final cascade;
+create materialized view urine_final as(
+select *
+from urine
+where hadm_id in(
+select hadm_id
+from cohort_final)
+); -- 1021665. Removed about 2/3. 
 
 -- Keep only relevant cohort's lactate and fill in missing hadm+icustay
-
+drop materialized view if exists lactate_final cascade;
+create materialized view lactate_final as(
+select *
+from lactate
+where icustay_id in(
+select icustay_id
+from cohort_final)
+);
 
 
 
@@ -183,11 +255,4 @@ LEFT JOIN lactate l
   ON cohort.icustay_id = l.icustay_id
 LEFT JOIN map m
   ON cohort.icustay_id = m.icustay_id
-
-
-
-
---drop materialized view cohort0;
---drop materialized view cohort1;
-
 

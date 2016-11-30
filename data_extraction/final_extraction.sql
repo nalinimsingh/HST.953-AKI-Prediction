@@ -93,7 +93,8 @@ select subject_id, icustay_id,
 	and intime_lead < (outtime + interval '24' hour)
 	then outtime + ( (intime_lead - outtime) / 2 )
 	else (outtime + interval '12' hour)
-	end as outtime
+	end as outtime,
+	intime as intimereal -- use this to calculate times from icu admission later
 from tmp
 ); -- 7681
 ------------------------------------------------------------------
@@ -144,7 +145,7 @@ order by subject_id, hadm_id, charttime
 drop materialized view if exists admission_creatinine cascade; 
 create materialized view admission_creatinine as(
 with tmp as(
-select c.*, extract(epoch from (c.charttime-a.admittime))/36 as min_from_admission
+select c.*, extract(epoch from (c.charttime-a.admittime))/60 as min_from_admission
        --,row_number() over(partition by c.hadm_id order by c.charttime) as r
 from creatinine1 c
 inner join admissions a
@@ -158,7 +159,7 @@ where min_from_admission<120 -- Get all measurements before admission and a bit 
 select hadm_id, avg(valuenum) as meanvalue, max(valuenum) as maxvalue 
 from tmp0
 group by hadm_id
-);  -- 5624 hadm_ids.
+);  -- 5890 hadm_ids.
 
 
 
@@ -174,7 +175,7 @@ where hadm_id not in(
 select hadm_id
 from admission_creatinine
 where maxvalue>1.2)
-); -- 5471 icustay. 5065 hadm, 4665 subject
+); -- 5342 icustay.
 
 
 -- Update the subset of admission and icustay fuzzy windows
@@ -186,7 +187,7 @@ from cohortadmissions1
 where hadm_id in (
       select hadm_id
       from cohort_final)
-); -- 5065
+); -- 4946
 
 
 drop materialized view if exists cohorticustays_final cascade;
@@ -196,7 +197,7 @@ from cohorticustays1
 where icustay_id in (
       select icustay_id
       from cohort_final)
-); -- 5471
+); -- 5342
 ------------------------------------------------------------------------------------------
 
 
@@ -211,13 +212,15 @@ where hadm_id in(
 select hadm_id
 from cohort_final)
 ) -- 129911
-select t.*, i.icustay_id
+select t.*, i.icustay_id,
+       extract(epoch from(t.charttime-i.intimereal))/60 as min_from_intime 
 from tmp t
 -- left join cohorticustays_final i -- can use this instead to keep the creatinine measurements.
 inner join cohorticustays_final i
 on t.subject_id = i.subject_id
 and t.charttime between i.intime and i.outtime
-); -- 94783 using inner join. Lost over 30000 by excluding rows which could not be matched to an icustay fuzzy window.  
+order by t.subject_id, i.icustay_id, min_from_intime 
+); -- 92433 using inner join. Lost over 30000 by excluding rows which could not be matched to an icustay fuzzy window.  
 
 
 -- Keep only relevant cohort's map and fill in icustay
@@ -229,7 +232,7 @@ from map
 where icustay_id in(
 select icustay_id
 from cohort_final)
-), -- 1823033. Removed about 2/3
+), --  Removed about 2/3
 tmp0 as( -- Isolate rows with icustay
    select *
    from tmp
@@ -244,12 +247,17 @@ tmp0 as( -- Isolate rows with icustay
    inner join cohorticustays_final i
    on t.charttime between i.intime and i.outtime
    and t.subject_id = i.subject_id -- (with +/-12h)
-)
+), tmp3 as(
 select * from tmp0 -- original with icustay
 union
 select * from tmp2 -- extra icustay filled. 
 order by subject_id, icustay_id, charttime
-); -- 1823033. No maps were excluded due to missing icustay id!!!  
+)
+select t.*, extract(epoch from(t.charttime-i.intimereal))/60 as min_from_intime
+from tmp3 t
+inner join cohorticustays_final i
+on t.icustay_id = i.icustay_id
+); -- 1778419. No maps were excluded due to missing icustay id!!!  
 
 
 -- Keep only relevant cohort's urine and fill in missing icustay
@@ -276,12 +284,17 @@ tmp0 as( -- Isolate rows with icustay
    inner join cohorticustays_final i
    on t.charttime between i.intime and i.outtime
    and t.subject_id = i.subject_id -- (with +/-12h)
-)
+), tmp3 as(
 select * from tmp0 -- original with icustay
 union
 select * from tmp2 -- extra icustay filled. 
 order by subject_id, icustay_id, charttime
-); -- 1008455. Excluded about 1000 measurements due to missing icustayid. 
+)
+select t.*, extract(epoch from(t.charttime-i.intimereal))/60 as min_from_intime
+from tmp3 t
+inner join cohorticustays_final i
+on t.icustay_id = i.icustay_id
+); -- 986936. Excluded about 1000 measurements due to missing icustayid. 
 
 
 -- Keep only relevant cohort's lactate
@@ -313,22 +326,25 @@ from cohort_final)
 -------------------- Exporting Tables --------------------------
 -- Creatinine
 COPY(
-  SELECT icustay_id, charttime, valuenum as value
+  SELECT icustay_id, min_from_intime, valuenum as value
   FROM creatinine_final
+  ORDER BY icustay_id, min_from_intime
 )
 TO '/home/chen/Projects/HST953-MLinCriticalCare/HST.953/data_extraction/tables/creatinine.csv' DELIMITER ',' CSV HEADER;
 
 -- Map
 COPY(
-  SELECT icustay_id, charttime, itemid, valuenum as value
+  SELECT icustay_id, min_from_intime, itemid, valuenum as value
   FROM map_final
+  ORDER BY icustay_id, min_from_intime
 )
 TO '/home/chen/Projects/HST953-MLinCriticalCare/HST.953/data_extraction/tables/map.csv' DELIMITER ',' CSV HEADER;
 
 -- Urine
 COPY(
-  SELECT icustay_id, charttime, value
+  SELECT icustay_id, min_from_intime, value
   FROM urine_final
+  ORDER BY icustay_id, min_from_intime
 )
 TO '/home/chen/Projects/HST953-MLinCriticalCare/HST.953/data_extraction/tables/urine.csv' DELIMITER ',' CSV HEADER;
 
@@ -341,6 +357,7 @@ COPY(
   ON c.icustay_id = l.icustay_id
   LEFT join vaso_final v
   ON c.icustay_id = v.icustay_id
+  ORDER BY subject_id, hadm_id, icustay_id
 )
 TO '/home/chen/Projects/HST953-MLinCriticalCare/HST.953/data_extraction/tables/cohort.tsv' DELIMITER E'\t' HEADER CSV;
 

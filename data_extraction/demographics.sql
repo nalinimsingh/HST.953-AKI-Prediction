@@ -13,7 +13,14 @@ FROM admissions a
 INNER JOIN patients p
       ON a.subject_id = p.subject_id -- 50765 hospital admissions 
 )
-SELECT t.*, i.icustay_id, i.dbsource, i.intime, i.outtime, i.los
+SELECT t.*,
+       case when t.age >= 18 and t.age < 35 then 1
+       when t.age >= 35 and t.age < 50 then 2
+       when t.age >= 50 and t.age < 65 then 3
+       when t.age >= 65 and t.age < 80 then 4
+       when t.age >= 80 then 5
+       end as agebin,
+       i.icustay_id, i.dbsource, i.intime, i.outtime, i.los
 FROM tmp t
 INNER JOIN icustays i
 ON t.hadm_id = i.hadm_id

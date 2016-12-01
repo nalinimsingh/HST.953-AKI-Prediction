@@ -154,7 +154,7 @@ from creatinine1
 where min_from_intime<=0
 ), --   select count(distinct icustay_id) from cohort1; = 7681
 tmp1 as(
-select icustay_id, value
+select icustay_id, value, min_from_intime
 from tmp
 where r=1 -- 5772 icustay_ids
 ),
@@ -165,11 +165,12 @@ from creatinine1
 where min_from_intime>0
 ),
 tmp3 as(
-select icustay_id, value
+select icustay_id, value, min_from_intime
 from tmp2
 where r=1
 ), -- 7646 icustay_ids
-tmp4 as(select t1.icustay_id, t1.value, t3.icustay_id as icustay_id_after, t3.value as value_after
+tmp4 as(select t1.icustay_id, t1.value, t1.min_from_intime,
+  t3.icustay_id as icustay_id_after, t3.value as value_after, t3.min_from_intime as min_from_intime_after
 from tmp1 t1
 full join tmp3 t3
 on t1.icustay_id = t3.icustay_id -- 7646. There are some icustays with creatinine measurements only after, none with only before. 
@@ -179,7 +180,10 @@ select case when icustay_id is not null then icustay_id
        end as icustay_id,
        case when value is not null then value
        else value_after
-       end as value
+       end as value,
+       case when min_from_intime is not null then min_from_intime
+       else min_from_intime_after
+       end as min_from_intime
 from tmp4
 order by icustay_id
 ); -- 7646, no blanks. Although there are patients in the cohort without creatinine values... 
@@ -194,11 +198,18 @@ drop materialized view if exists cohort_final cascade;
 create materialized view cohort_final as(
 select *
 from cohort1
+/*
 where icustay_id not in(
 select icustay_id
 from admission_creatinine
 where value>1.2)
-); --  4993 icustay.
+-- We don't just want to exclude those with >1.2, but also those without creatinines. 
+*/ -- 4993 icustay.
+where icustay_id in(
+select icustay_id
+from admission_creatinine
+where value<1.2)
+); --  4524 icustayid
 
 
 -- Update the subset of admission and icustay fuzzy windows
@@ -210,7 +221,7 @@ from cohortadmissions1
 where hadm_id in (
       select hadm_id
       from cohort_final)
-); -- 4703
+); -- 4271
 
 
 drop materialized view if exists cohorticustays_final cascade;
@@ -220,7 +231,7 @@ from cohorticustays1
 where icustay_id in (
       select icustay_id
       from cohort_final)
-); -- 4993
+); -- 4524
 ------------------------------------------------------------------------------------------
 
 
@@ -233,7 +244,7 @@ from creatinine1
 where icustay_id in(
 select icustay_id
 from cohort_final)
-); --84675
+); --76580
 
 
 
@@ -271,7 +282,7 @@ select t.*, extract(epoch from(t.charttime-i.intimereal))/60 as min_from_intime
 from tmp3 t
 inner join cohorticustays_final i
 on t.icustay_id = i.icustay_id
-); -- 1629327. No maps were excluded due to missing icustay id!!!  
+); -- 1492567. No maps were excluded due to missing icustay id!!!  
 
 
 -- Keep only relevant cohort's urine and fill in missing icustay
@@ -283,7 +294,7 @@ from urine
 where icustay_id in(
 select icustay_id
 from cohort_final)
-), -- 1009884. Removed about 2/3
+), -- Removed about 2/3
 tmp0 as( -- Isolate rows with icustay
    select *
    from tmp
@@ -308,7 +319,7 @@ select t.*, extract(epoch from(t.charttime-i.intimereal))/60 as min_from_intime
 from tmp3 t
 inner join cohorticustays_final i
 on t.icustay_id = i.icustay_id
-); -- 923905. Excluded about 1000 measurements due to missing icustayid. 
+); -- 838491. Excluded about 1000 measurements due to missing icustayid. 
 
 
 -- Keep only relevant cohort's lactate
@@ -319,7 +330,7 @@ from lactate
 where icustay_id in(
 select icustay_id
 from cohort_final)
-); -- 4185
+); -- 3806
 
 -- Keep only relevant cohort's vasopressor durations 
 drop materialized view if exists vaso_final cascade;
@@ -329,11 +340,9 @@ from vasopressordurations
 where icustay_id in(
 select icustay_id
 from cohort_final)
-); -- 4993 
+); -- 4524
 
 -- Every map, creatinine and urine from this point has an icustay_id.  
-
-
 
 
 
@@ -374,6 +383,17 @@ COPY(
   ORDER BY subject_id, hadm_id, icustay_id
 )
 TO '/home/chen/Projects/HST953-MLinCriticalCare/HST.953/data_extraction/tables/cohort.tsv' DELIMITER E'\t' HEADER CSV;
+
+
+-- Admission creatinines
+COPY(
+  SELECT *
+  FROM admission_creatinine 
+  where icustay_id in(
+  select icustay_id
+  from cohort_final)
+)
+TO '/home/chen/Projects/HST953-MLinCriticalCare/HST.953/data_extraction/tables/admission_creatinine.csv' DELIMITER ',' CSV HEADER;
 
 
 -----------------------------------------------------------------

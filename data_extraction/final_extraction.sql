@@ -129,37 +129,60 @@ with tmp as( -- cohort subset measurements only, via subject and hadm id.
    inner join cohortadmissions1 a
    on t.charttime between a.admittime and a.dischtime
    and t.subject_id = a.subject_id -- (with +/-12h)
-)
+), tmp3 as(
 select * from tmp0 -- original with hadm
 union
 select * from tmp2 -- extra hadm filled. 
-order by subject_id, hadm_id, charttime
-); -- 184000 using union. Use union rather than union all because the duplicate rows indicate that the same info was probably input twice. 
+order by subject_id, hadm_id, charttime -- 184000 using union. Use union rather than union all because the duplicate rows indicate that the same info was probably input twice. 
+)
+-- Try to match icustay ids to each creatinine measurement.  Careful not to use fuzzy admit times, but real ones. 
+select t.*, i.icustay_id, extract(epoch from(t.charttime-i.intimereal))/60 as min_from_intime 
+from tmp t
+inner join cohorticustays1 i
+on t.charttime between i.intime and i.outtime
+and t.subject_id = i.subject_id
+); -- 135319. Dropped 50000 that could not be fit into an icustay. Can use left join to keep. 
 
--- Note that there are actually a bunch of creatinine measurements which lie out of any hadm_ids by several days. We will toss out creatinine measurements that lie too far out of the hadm window.  
 
-
-
--- Get creatinine measurements closest to each icustay entry time. 'admission creatinines'
--- Careful not to use fuzzy admit times, but real ones. 
+-- Get admission creatinine measurements. The closest measurement before intime. If none exist, the closest after.
 drop materialized view if exists admission_creatinine cascade; 
 create materialized view admission_creatinine as(
-with tmp as(
-select c.*, extract(epoch from (c.charttime-a.admittime))/60 as min_from_admission
-       --,row_number() over(partition by c.hadm_id order by c.charttime) as r
-from creatinine1 c
-inner join admissions a
-on c.hadm_id=a.hadm_id
-order by subject_id, hadm_id, charttime
-), tmp0 as(
-select *
+with tmp as( -- measurements before admission
+select icustay_id, valuenum as value, min_from_intime,
+       row_number() over (partition by icustay_id order by min_from_intime desc) as r
+from creatinine1
+where min_from_intime<=0
+), --   select count(distinct icustay_id) from cohort1; = 7681
+tmp1 as(
+select icustay_id, value
 from tmp
-where min_from_admission<120 -- Get all measurements before admission and a bit after. 
-) -- select count(hadm_id) from tmp0; -- 6512.  
-select hadm_id, avg(valuenum) as meanvalue, max(valuenum) as maxvalue 
-from tmp0
-group by hadm_id
-);  -- 5890 hadm_ids.
+where r=1 -- 5772 icustay_ids
+),
+tmp2 as( -- measurements after admission
+select icustay_id, valuenum as value, min_from_intime,
+       row_number() over (partition by icustay_id order by min_from_intime) as r
+from creatinine1
+where min_from_intime>0
+),
+tmp3 as(
+select icustay_id, value
+from tmp2
+where r=1
+), -- 7646 icustay_ids
+tmp4 as(select t1.icustay_id, t1.value, t3.icustay_id as icustay_id_after, t3.value as value_after
+from tmp1 t1
+full join tmp3 t3
+on t1.icustay_id = t3.icustay_id -- 7646. There are some icustays with creatinine measurements only after, none with only before. 
+)
+select case when icustay_id is not null then icustay_id
+       else icustay_id_after
+       end as icustay_id,
+       case when value is not null then value
+       else value_after
+       end as value
+from tmp4
+order by icustay_id
+); -- 7646, no blanks. Although there are patients in the cohort without creatinine values... 
 
 
 
@@ -171,11 +194,11 @@ drop materialized view if exists cohort_final cascade;
 create materialized view cohort_final as(
 select *
 from cohort1
-where hadm_id not in(
-select hadm_id
+where icustay_id not in(
+select icustay_id
 from admission_creatinine
-where maxvalue>1.2)
-); -- 5342 icustay.
+where value>1.2)
+); --  4993 icustay.
 
 
 -- Update the subset of admission and icustay fuzzy windows
@@ -187,7 +210,7 @@ from cohortadmissions1
 where hadm_id in (
       select hadm_id
       from cohort_final)
-); -- 4946
+); -- 4703
 
 
 drop materialized view if exists cohorticustays_final cascade;
@@ -197,7 +220,7 @@ from cohorticustays1
 where icustay_id in (
       select icustay_id
       from cohort_final)
-); -- 5342
+); -- 4993
 ------------------------------------------------------------------------------------------
 
 
@@ -205,22 +228,13 @@ where icustay_id in (
 -- Keep only relevant cohort's creatinine. All rows have hadm_id. 
 drop materialized view if exists creatinine_final cascade;
 create materialized view creatinine_final as(
-with tmp as(
 select *
 from creatinine1
-where hadm_id in(
-select hadm_id
+where icustay_id in(
+select icustay_id
 from cohort_final)
-) -- 129911
-select t.*, i.icustay_id,
-       extract(epoch from(t.charttime-i.intimereal))/60 as min_from_intime 
-from tmp t
--- left join cohorticustays_final i -- can use this instead to keep the creatinine measurements.
-inner join cohorticustays_final i
-on t.subject_id = i.subject_id
-and t.charttime between i.intime and i.outtime
-order by t.subject_id, i.icustay_id, min_from_intime 
-); -- 92433 using inner join. Lost over 30000 by excluding rows which could not be matched to an icustay fuzzy window.  
+); --84675
+
 
 
 -- Keep only relevant cohort's map and fill in icustay
@@ -257,7 +271,7 @@ select t.*, extract(epoch from(t.charttime-i.intimereal))/60 as min_from_intime
 from tmp3 t
 inner join cohorticustays_final i
 on t.icustay_id = i.icustay_id
-); -- 1778419. No maps were excluded due to missing icustay id!!!  
+); -- 1629327. No maps were excluded due to missing icustay id!!!  
 
 
 -- Keep only relevant cohort's urine and fill in missing icustay
@@ -294,7 +308,7 @@ select t.*, extract(epoch from(t.charttime-i.intimereal))/60 as min_from_intime
 from tmp3 t
 inner join cohorticustays_final i
 on t.icustay_id = i.icustay_id
-); -- 986936. Excluded about 1000 measurements due to missing icustayid. 
+); -- 923905. Excluded about 1000 measurements due to missing icustayid. 
 
 
 -- Keep only relevant cohort's lactate
@@ -305,7 +319,7 @@ from lactate
 where icustay_id in(
 select icustay_id
 from cohort_final)
-); -- 4581
+); -- 4185
 
 -- Keep only relevant cohort's vasopressor durations 
 drop materialized view if exists vaso_final cascade;
@@ -315,7 +329,7 @@ from vasopressordurations
 where icustay_id in(
 select icustay_id
 from cohort_final)
-); -- 5471 
+); -- 4993 
 
 -- Every map, creatinine and urine from this point has an icustay_id.  
 

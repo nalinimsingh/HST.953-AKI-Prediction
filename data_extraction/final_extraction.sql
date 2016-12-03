@@ -350,6 +350,7 @@ from cohort_final)
 COPY(
   SELECT icustay_id, min_from_intime, valuenum as value
   FROM creatinine_final
+  WHERE valuenum is not null
   ORDER BY icustay_id, min_from_intime
 )
 TO '/home/chen/Projects/HST953-MLinCriticalCare/HST.953/data_extraction/tables/creatinine.csv' DELIMITER ',' CSV HEADER;
@@ -358,6 +359,7 @@ TO '/home/chen/Projects/HST953-MLinCriticalCare/HST.953/data_extraction/tables/c
 COPY(
   SELECT icustay_id, min_from_intime, itemid, valuenum as value
   FROM map_final
+  WHERE valuenum is not null
   ORDER BY icustay_id, min_from_intime
 )
 TO '/home/chen/Projects/HST953-MLinCriticalCare/HST.953/data_extraction/tables/map.csv' DELIMITER ',' CSV HEADER;
@@ -366,6 +368,7 @@ TO '/home/chen/Projects/HST953-MLinCriticalCare/HST.953/data_extraction/tables/m
 COPY(
   SELECT icustay_id, min_from_intime, value
   FROM urine_final
+  WHERE value is not null
   ORDER BY icustay_id, min_from_intime
 )
 TO '/home/chen/Projects/HST953-MLinCriticalCare/HST.953/data_extraction/tables/urine.csv' DELIMITER ',' CSV HEADER;

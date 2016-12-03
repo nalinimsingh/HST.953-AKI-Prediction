@@ -213,7 +213,6 @@ where value<1.2)
 
 
 -- Update the subset of admission and icustay fuzzy windows
-
 drop materialized view if exists cohortadmissions_final cascade;
 create materialized view cohortadmissions_final as(
 select *

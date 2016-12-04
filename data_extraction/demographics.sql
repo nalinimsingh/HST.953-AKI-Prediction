@@ -124,7 +124,7 @@ ON t.hadm_id = i.hadm_id
    WHERE age>=18
    AND los>=3
 )
-select t.*, hw.weight_first as weight
+select t.*, hw.weight_first as weight, hw.height_first as height
 from tmp0 t
 left join heightweight hw
 on t.icustay_id = hw.icustay_id

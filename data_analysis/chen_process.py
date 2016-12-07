@@ -33,8 +33,8 @@ def interpolateweights(cohort):
     results_without_height = model_without_height.fit()
 
     # Predict the missing weights 
-    w_with_height_predict = results_with_height.predict(c_with_height_test) # 56 to 93kg
-    w_without_height_predict = results_without_height.predict(c_without_height_test) # 42 to 88kg. Seems reasonable. 
+    w_with_height_predict = results_with_height.predict(c_with_height_test) 
+    w_without_height_predict = results_without_height.predict(c_without_height_test) 
     
     # Fill in the missing weights
     for i in range(0, len(w_with_height_predict)):

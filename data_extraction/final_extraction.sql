@@ -192,7 +192,7 @@ order by icustay_id
 
 
 ----------------------  Create final cohort.  ----------------------------------------------
---  Remove patients who have 'admission creatinines' >=1.2. 
+--  Remove patients who have 'admission creatinines' >=1.5. 
 -- Note, there are a lot of patients without 'admission creatinine' values. They will still be included. 
 drop materialized view if exists cohort_final cascade;
 create materialized view cohort_final as(
@@ -202,14 +202,14 @@ from cohort1
 where icustay_id not in(
 select icustay_id
 from admission_creatinine
-where value>1.2)
--- We don't just want to exclude those with >1.2, but also those without creatinines. 
+where value>1.5)
+-- We don't just want to exclude those with >1.5, but also those without creatinines. 
 */ -- 4993 icustay.
 where icustay_id in(
 select icustay_id
 from admission_creatinine
-where value<1.2)
-); --  4524 icustayid
+where value<1.5)
+); --  4524 icustayid with 1.2, 5562 with 1.5. 
 
 
 -- Update the subset of admission and icustay fuzzy windows
@@ -220,7 +220,7 @@ from cohortadmissions1
 where hadm_id in (
       select hadm_id
       from cohort_final)
-); -- 4271
+); -- 4271, 5216
 
 
 drop materialized view if exists cohorticustays_final cascade;
@@ -230,7 +230,7 @@ from cohorticustays1
 where icustay_id in (
       select icustay_id
       from cohort_final)
-); -- 4524
+); -- 4524, 5562
 ------------------------------------------------------------------------------------------
 
 
@@ -243,7 +243,7 @@ from creatinine1
 where icustay_id in(
 select icustay_id
 from cohort_final)
-); --76580
+); --76580, 95130
 
 
 
@@ -281,7 +281,7 @@ select t.*, extract(epoch from(t.charttime-i.intimereal))/60 as min_from_intime
 from tmp3 t
 inner join cohorticustays_final i
 on t.icustay_id = i.icustay_id
-); -- 1492567. No maps were excluded due to missing icustay id!!!  
+); -- 1492567. No maps were excluded due to missing icustay id!!! 1808403 with creatinine 1.5
 
 
 -- Keep only relevant cohort's urine and fill in missing icustay
@@ -318,7 +318,7 @@ select t.*, extract(epoch from(t.charttime-i.intimereal))/60 as min_from_intime
 from tmp3 t
 inner join cohorticustays_final i
 on t.icustay_id = i.icustay_id
-); -- 838491. Excluded about 1000 measurements due to missing icustayid. 
+); -- 838491. Excluded about 1000 measurements due to missing icustayid.  1024683 with creat 1.5
 
 
 -- Keep only relevant cohort's lactate
@@ -329,7 +329,7 @@ from lactate
 where icustay_id in(
 select icustay_id
 from cohort_final)
-); -- 3806
+); -- 3806, 4707
 
 -- Keep only relevant cohort's vasopressor durations 
 drop materialized view if exists vaso_final cascade;
@@ -339,7 +339,7 @@ from vasopressordurations
 where icustay_id in(
 select icustay_id
 from cohort_final)
-); -- 4524
+); -- 4524, 5562
 
 -- Every map, creatinine and urine from this point has an icustay_id.  
 

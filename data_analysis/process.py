@@ -159,7 +159,7 @@ def geteth(cohort):
     return eth 
 
 
-def getmapfeatures(maps):
+def getmapfeatures(maps,map_cutoffs):
     # convert raw MAP readings to MAP features
     interval = 60
 
@@ -199,15 +199,16 @@ def getmapfeatures(maps):
     min_ind = map_72.groupby('icustay_id')['value'].idxmin(skipna=True)
     min_maps = map_72.loc[min_ind]
 
-    map_cutoffs = np.append(np.arange(30,100,10),200)
+    
     map_72['bin'] = pd.cut(map_72['value'], map_cutoffs)
     min_maps['bin'] = pd.cut(min_maps['value'], map_cutoffs)
 
     map_fracs = map_72.groupby('icustay_id')['bin'].value_counts(normalize=True)
+    map_fracs.index.set_names(['icustay_id','bin'], inplace=True)
+    map_fracs = map_fracs.unstack('bin')
 
     # reformat features to be used in final dataset
     min_maps = min_maps.set_index('icustay_id')
-    map_fracs = map_fracs.to_frame()
     
     return (mean_maps, min_maps, map_fracs)
 
@@ -260,13 +261,15 @@ def analyzecreatinine(creatinine, admission_creatinine):
     return creat_summary
 
 
-def getlrdata(cohort, eth, min_maps, creat_summary, aki_urine):
+def getlrdata(cohort, eth, min_maps, map_fracs, creat_summary, aki_urine):
     lr_data = cohort[['icustay_id','age','los','max_lactate','vaso_frac','gender']]
     lr_data['eth'] = eth
     lr_data = lr_data.set_index('icustay_id')
 
     lr_data = lr_data.join(min_maps,how='inner')
     lr_data.rename(columns={'value':'min_map','bin':'min_map_bin'},inplace=True)
+
+    lr_data = lr_data.join(map_fracs,how='inner')
 
     lr_data = lr_data.join(creat_summary['creat_aki'],how='left')
 

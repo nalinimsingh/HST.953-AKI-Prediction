@@ -196,10 +196,9 @@ def getmapfeatures(maps,map_cutoffs):
     map_72 = interp_mean_maps.loc[(0<interp_mean_maps['hour']) & (interp_mean_maps['hour']<72)]
 
     # get minimum MAP value per patient
-    min_ind = map_72.groupby('icustay_id')['value'].idxmin(skipna=True)
-    min_maps = map_72.loc[min_ind]
+    min_ind = maps.groupby('icustay_id')['value'].idxmin(skipna=True)
+    min_maps = maps.loc[min_ind]
 
-    
     map_72['bin'] = pd.cut(map_72['value'], map_cutoffs)
     min_maps['bin'] = pd.cut(min_maps['value'], map_cutoffs)
 
@@ -218,7 +217,7 @@ def analyzecreatinine(creatinine, admission_creatinine):
     creatinine = creatinine.dropna()
 
     # only consider creatinine measurements after admission
-    creatinine = creatinine.loc[creatinine['min_from_intime']>0]
+    creatinine = creatinine.loc[(creatinine['min_from_intime']>0)]
 
     # calculate time and first creatinine measurement from admission
     creatinine = creatinine.merge(admission_creatinine,suffixes=('','_ref'),on=['icustay_id'],how='left')

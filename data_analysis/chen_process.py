@@ -312,4 +312,44 @@ def get_summary(dataset):
     print ""
     
     
+
+
+def bootstrap_resample(X, n=None):
+    """ Bootstrap resample an array_like
+    Parameters
+    ----------
+    X : array_like
+      data to resample
+    n : int, optional
+      length of resampled array, equal to len(X) if n==None
+    Results
+    -------
+    returns X_resamples
+    """
+    if n == None:
+        n = len(X)
+        
+    resample_i = np.floor(np.random.rand(n)*len(X)).astype(int)
+    X_resample = X[resample_i]
+    return X_resample
+
+def bootstrap_CI(X, outer = 0.025, nbootstraps=1000):
+    # X is an array of all the data
+    
+    interval = np.zeros([1,3])
+    interval[0][1]=X.mean()
+    
+    bootstrapmeans=np.zeros(nbootstraps)
+    
+    # Do the bootstrapping resampling nbootstraps times. 
+    for i in range(0, nbootstraps):
+        bootstrapmeans[i]=bootstrap_resample(X).mean()
+        
+    bootstrapmeans.sort()
+    
+    interval[0][0] = bootstrapmeans[np.floor(nbootstraps*outer)]
+    interval[0][2] = bootstrapmeans[np.floor(1-nbootstraps*outer)]
+    
+    return interval
+    
     
